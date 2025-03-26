@@ -9,7 +9,7 @@ def log(message):
     print(f"[LOG] {message}", file=sys.stderr)
 
 db_params = {
-    "host": "127.0.0.1",  # Connect to local proxy
+    "host": "35.185.8.133",  # Direct connection to Cloud SQL
     "user": "root",
     "password": "Atenas9democraci.",
     "database": "thera_final_database",
@@ -20,7 +20,7 @@ db_params = {
 def test_connection():
     try:
         log("Attempting to connect to database...")
-        log(f"Connecting through Cloud SQL Proxy on {db_params['host']}:{db_params['port']}")
+        log(f"Connecting directly to Cloud SQL on {db_params['host']}:{db_params['port']}")
         conn = pymysql.connect(**db_params)
         log("Successfully connected!")
         

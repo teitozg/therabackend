@@ -17,7 +17,7 @@ const log = (message) => {
 
 // Database configuration
 const dbConfig = {
-  host: process.env.DB_HOST || "127.0.0.1", // Connect to local proxy
+  host: process.env.DB_HOST || "35.185.8.133", // Direct connection to Cloud SQL
   user: process.env.DB_USER || "root",
   password: process.env.DB_PASSWORD || "Atenas9democraci.",
   database: process.env.DB_NAME || "thera_final_database",

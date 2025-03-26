@@ -12,7 +12,7 @@ load_dotenv()
 
 # MySQL Connection Parameters
 db_params = {
-    "host": os.getenv('DB_HOST', '127.0.0.1'),  # Connect to local proxy
+    "host": os.getenv('DB_HOST', '35.185.8.133'),  # Direct connection to Cloud SQL
     "user": os.getenv('DB_USER', 'root'),
     "password": os.getenv('DB_PASSWORD', 'Atenas9democraci.'),
     "database": os.getenv('DB_NAME', 'thera_final_database'),
