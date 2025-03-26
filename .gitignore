@@ -1,0 +1,40 @@
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Dependencies
+node_modules/
+venv/
+__pycache__/
+*.pyc
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build files
+/dist
+/build
+.DS_Store
+
+# Database files
+*.sqlite
+*.db
+
+# Temporary files
+/tmp
+/temp
+uploads/
+
+# Sensitive data
+*config.json
+*credentials.json
