@@ -32,12 +32,16 @@ def get_transactions(table_name="started_matches"):
     """Get transactions from specified table"""
     try:
         if table_name not in ["started_matches", "succeeded_matches"]:
+            log(f"Invalid table name: {table_name}")
             raise ValueError("Invalid table name")
             
+        log(f"Attempting to connect to database with params: {db_params}")
         conn = pymysql.connect(**db_params)
+        log("Database connection successful")
+        
         cursor = conn.cursor(pymysql.cursors.DictCursor)
         
-        cursor.execute(f"""
+        query = f"""
             SELECT 
                 stripe_id,
                 stripe_converted_amount,
@@ -55,9 +59,14 @@ def get_transactions(table_name="started_matches"):
             FROM {table_name}
             WHERE merge_source != 'ledger_only'
             ORDER BY stripe_created_date_utc DESC
-        """)
+        """
+        log(f"Executing query: {query}")
+        
+        cursor.execute(query)
+        log("Query executed successfully")
         
         transactions = cursor.fetchall()
+        log(f"Fetched {len(transactions)} transactions")
         
         # Convert datetime objects to strings
         for tx in transactions:

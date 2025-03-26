@@ -5,7 +5,7 @@ const multer = require("multer");
 const XLSX = require("xlsx");
 const path = require("path");
 const { spawn } = require("child_process");
-const mysql = require("mysql2");
+const mysql = require("mysql2/promise");
 const { Parser } = require("json2csv");
 
 const app = express();
@@ -30,7 +30,7 @@ const pool = mysql.createPool(dbConfig);
 
 app.use(
   cors({
-    origin: "http://localhost:3000", // Your frontend URL
+    origin: "https://therawebapp.vercel.app", // Only allow your Vercel frontend
     credentials: true,
   })
 );
@@ -542,24 +542,26 @@ app.get("/api/matches", async (req, res) => {
 // Modify the /api/transactions route
 app.get("/api/transactions", (req, res) => {
   const table = req.query.table || "started_matches";
+  console.log(`Fetching transactions from table: ${table}`);
 
-  // Add error handling for Python process
   const python = spawn("python", ["transaction_service.py", table]);
+  console.log("Spawned Python process");
 
   let dataString = "";
   let errorString = "";
 
   python.stdout.on("data", (data) => {
+    console.log("Python stdout:", data.toString());
     dataString += data.toString();
   });
 
   python.stderr.on("data", (data) => {
-    errorString += data.toString();
     console.error("Python stderr:", data.toString());
+    errorString += data.toString();
   });
 
   python.on("error", (error) => {
-    console.error("Failed to start Python process:", error);
+    console.error("Python spawn error:", error);
     res.status(500).json({
       error: "Failed to start Python process",
       details: error.message,
@@ -569,6 +571,7 @@ app.get("/api/transactions", (req, res) => {
   });
 
   python.on("close", (code) => {
+    console.log(`Python process exited with code ${code}`);
     if (code !== 0) {
       return res.status(500).json({
         error: "Failed to fetch transactions",
@@ -580,6 +583,7 @@ app.get("/api/transactions", (req, res) => {
       const transactions = JSON.parse(dataString);
       res.json(transactions);
     } catch (e) {
+      console.error("JSON parse error:", e);
       res.status(500).json({
         error: "Invalid JSON response",
         details: e.message,
@@ -589,6 +593,63 @@ app.get("/api/transactions", (req, res) => {
   });
 });
 
+// Make sure this endpoint is defined before app.listen()
+app.get("/api/test-db", async (req, res) => {
+  try {
+    console.log("Testing database connection...");
+    const connection = await mysql.createConnection({
+      host: process.env.DB_HOST || "35.185.8.133",
+      user: process.env.DB_USER || "root",
+      password: process.env.DB_PASSWORD || "Atenas9democraci.",
+      database: process.env.DB_NAME || "thera_final_database",
+      port: parseInt(process.env.DB_PORT || "3306"),
+      connectTimeout: 60000,
+    });
+
+    console.log("Connection established, testing query...");
+    // Test the connection
+    const [rows] = await connection.execute("SELECT 1 as test");
+
+    // Test a real table
+    const [tables] = await connection.execute("SHOW TABLES");
+
+    console.log("Queries successful, closing connection...");
+    await connection.end();
+
+    res.json({
+      status: "success",
+      message: "Database connection successful",
+      test: rows[0].test,
+      tables: tables,
+    });
+  } catch (error) {
+    console.error("Database connection error:", error);
+    res.status(500).json({
+      status: "error",
+      message: "Database connection failed",
+      error: error.message,
+      stack: error.stack,
+      config: {
+        host: process.env.DB_HOST || "35.185.8.133",
+        user: process.env.DB_USER || "root",
+        database: process.env.DB_NAME || "thera_final_database",
+        port: process.env.DB_PORT || 3306,
+      },
+    });
+  }
+});
+
+// Also add a general error handler
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({
+    status: "error",
+    message: "Something broke!",
+    error: err.message,
+  });
+});
+
+// Make sure these are at the end of the file
 const PORT = process.env.PORT || 5001;
 
 app.get("/", (req, res) => {
