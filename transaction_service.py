@@ -59,6 +59,7 @@ def get_transactions(table_name="started_matches"):
             FROM {table_name}
             WHERE merge_source != 'ledger_only'
             ORDER BY stripe_created_date_utc DESC
+            LIMIT 100
         """
         log(f"Executing query: {query}")
         

@@ -30,8 +30,14 @@ const pool = mysql.createPool(dbConfig);
 
 app.use(
   cors({
-    origin: "https://therawebapp.vercel.app", // Only allow your Vercel frontend
+    origin: [
+      "https://therawebfront.vercel.app",
+      "https://therawebapp.vercel.app",
+    ],
     credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    exposedHeaders: ["Content-Range", "X-Content-Range"],
   })
 );
 app.use(express.json());
