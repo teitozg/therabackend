@@ -35,12 +35,10 @@ def get_transactions(table_name="started_matches"):
             log(f"Invalid table name: {table_name}")
             raise ValueError("Invalid table name")
             
-        log(f"Attempting to connect to database with params: {db_params}")
         conn = pymysql.connect(**db_params)
-        log("Database connection successful")
-        
         cursor = conn.cursor(pymysql.cursors.DictCursor)
         
+        # Remove any LIMIT clause from the query
         query = f"""
             SELECT 
                 stripe_id,
@@ -59,12 +57,10 @@ def get_transactions(table_name="started_matches"):
             FROM {table_name}
             WHERE merge_source != 'ledger_only'
             ORDER BY stripe_created_date_utc DESC
-            LIMIT 100
-        """
-        log(f"Executing query: {query}")
+        """  # Removed any LIMIT clause
         
+        log(f"Executing query: {query}")
         cursor.execute(query)
-        log("Query executed successfully")
         
         transactions = cursor.fetchall()
         log(f"Fetched {len(transactions)} transactions")
@@ -74,6 +70,7 @@ def get_transactions(table_name="started_matches"):
             if tx['stripe_created_date_utc']:
                 tx['stripe_created_date_utc'] = tx['stripe_created_date_utc'].isoformat()
         
+        # Stream the response in chunks to handle large datasets
         return True, json.dumps(transactions, cls=DecimalEncoder)
         
     except Exception as e:

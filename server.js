@@ -550,6 +550,9 @@ app.get("/api/transactions", (req, res) => {
   const table = req.query.table || "started_matches";
   console.log(`Fetching transactions from table: ${table}`);
 
+  // Set response headers for larger datasets
+  res.setHeader("Transfer-Encoding", "chunked");
+
   const python = spawn("python", ["transaction_service.py", table]);
   console.log("Spawned Python process");
 
@@ -557,7 +560,7 @@ app.get("/api/transactions", (req, res) => {
   let errorString = "";
 
   python.stdout.on("data", (data) => {
-    console.log("Python stdout:", data.toString());
+    console.log("Python stdout chunk size:", data.length);
     dataString += data.toString();
   });
 
@@ -587,6 +590,7 @@ app.get("/api/transactions", (req, res) => {
     }
     try {
       const transactions = JSON.parse(dataString);
+      console.log(`Total transactions to send: ${transactions.length}`);
       res.json(transactions);
     } catch (e) {
       console.error("JSON parse error:", e);
