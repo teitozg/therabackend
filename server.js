@@ -539,32 +539,52 @@ app.get("/api/matches", async (req, res) => {
   }
 });
 
-// Add this route to handle transaction list requests
+// Modify the /api/transactions route
 app.get("/api/transactions", (req, res) => {
   const table = req.query.table || "started_matches";
-  const python = spawn("/Users/teitozg/anaconda3/bin/python3", [
-    "transaction_service.py",
-    table,
-  ]);
+
+  // Add error handling for Python process
+  const python = spawn("python", ["transaction_service.py", table]);
+
   let dataString = "";
+  let errorString = "";
 
   python.stdout.on("data", (data) => {
     dataString += data.toString();
   });
 
   python.stderr.on("data", (data) => {
+    errorString += data.toString();
     console.error("Python stderr:", data.toString());
+  });
+
+  python.on("error", (error) => {
+    console.error("Failed to start Python process:", error);
+    res.status(500).json({
+      error: "Failed to start Python process",
+      details: error.message,
+      command: "python",
+      args: ["transaction_service.py", table],
+    });
   });
 
   python.on("close", (code) => {
     if (code !== 0) {
-      return res.status(500).json({ error: "Failed to fetch transactions" });
+      return res.status(500).json({
+        error: "Failed to fetch transactions",
+        code: code,
+        stderr: errorString,
+      });
     }
     try {
       const transactions = JSON.parse(dataString);
       res.json(transactions);
     } catch (e) {
-      res.status(500).json({ error: "Invalid JSON response" });
+      res.status(500).json({
+        error: "Invalid JSON response",
+        details: e.message,
+        output: dataString,
+      });
     }
   });
 });
