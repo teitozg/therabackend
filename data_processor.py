@@ -128,13 +128,13 @@ def validate_columns(df, source_type):
     if not expected:
         raise ValueError(f"Unknown source type: {source_type}")
     
-    # Special handling for Stripe Balance Changes
-    if source_type == "Thera_Stripe_Balance_Changes":
-        # No necesitamos validar las columnas originales
-        # porque el archivo ya tiene las columnas correctas
+    # Special handling for Thera_Ledger_Transactions
+    if source_type == "Thera_Ledger_Transactions":
+        # Remove the metadata field validations - we want to keep all records
+        log(f"Processing {len(df)} Ledger transactions")
         return True
     
-    # Para otros tipos de archivos, continuar con la validación normal
+    # For other types of files, continue with the validation normal
     expected = [col.lower() for col in expected]
     df_columns_lower = {col.lower(): col for col in df.columns}
     
@@ -496,21 +496,11 @@ def process_and_upload_file(file_path, source_type):
         # Add this logging to check data before any filtering
         log(f"Initial row count: {len(df)}")
         
-        # Check for any implicit filtering in the validation step
+        # Validate columns but don't filter data
         validate_columns(df, source_type)
         
         # Add logging after validation
         log(f"Row count after validation: {len(df)}")
-        
-        # Check for nulls in key columns for Ledger Transactions
-        if source_type == 'Thera_Ledger_Transactions':
-            key_columns = ['effective_date', 'metadata_type', 'metadata_latestStripeChargeId', 'metadata_paymentId']
-            for col in key_columns:
-                null_count = df[col].isnull().sum()
-                log(f"Null values in {col}: {null_count}")
-        
-        # Add logging before upload
-        log(f"Final row count before upload: {len(df)}")
         
         # Connect to database
         log("Connecting to database...")
@@ -522,46 +512,23 @@ def process_and_upload_file(file_path, source_type):
         log(f"Creating/checking table: {source_type}")
         create_table_if_not_exists(cursor, source_type)
         
-        # Determinar la columna clave según el tipo de tabla
-        key_column = {
-            'Thera_Stripe_Balance_Changes': 'balance_transaction_id',
-            'Thera_Stripe_Incoming_Transactions': 'id',
-            'Thera_Ledger_Transactions': 'id',
-            'Thera_Ledger_Accounts': 'id'
-        }.get(source_type, 'id')
-        
-        log(f"Checking for duplicates using key column: {key_column}")
-        
-        # Verificar duplicados
-        cursor.execute(f"SELECT `{key_column}` FROM `{source_type}`")
-        existing_keys = {row[0] for row in cursor.fetchall()}
-        
-        # Preparar datos para inserción
-        log("Preparing data for insertion...")
+        # Prepare data for insertion - handle all rows
+        log("Preparing all rows for insertion...")
         for col in df.columns:
             if pd.api.types.is_datetime64_any_dtype(df[col]):
                 df[col] = df[col].dt.strftime('%Y-%m-%d %H:%M:%S')
             elif pd.api.types.is_numeric_dtype(df[col]):
                 df[col] = df[col].replace({pd.NA: None, np.nan: None})
-                df[col] = df[col].apply(lambda x: str(x) if pd.notnull(x) else None)
             elif pd.api.types.is_object_dtype(df[col]):
-                if col in ['posted_at', 'effective_at', 'effective_date', 'created_date_utc', 'refunded_date_utc']:
-                    df[col] = df[col].apply(lambda x: x.replace(' UTC', '') if isinstance(x, str) else x)
-                    df[col] = pd.to_datetime(df[col], errors='coerce')
-                    df[col] = df[col].apply(lambda x: x.strftime('%Y-%m-%d %H:%M:%S') if pd.notnull(x) else None)
-                else:
-                    df[col] = df[col].replace({pd.NA: None, np.nan: None, 'nan': None, 'None': None, '': None})
+                df[col] = df[col].replace({pd.NA: None, np.nan: None, 'nan': None, 'None': None, '': None})
         
-        # Insertar datos
+        # Insert all data
         if len(df) > 0:
             columns = ', '.join(f'`{col}`' for col in df.columns)
             placeholders = ', '.join(['%s'] * len(df.columns))
-            
-            # Usar REPLACE en lugar de INSERT
             replace_query = f"REPLACE INTO `{source_type}` ({columns}) VALUES ({placeholders})"
             
-            data = df.replace({pd.NA: None, np.nan: None}).values.tolist()
-            data = [tuple(None if pd.isna(x) else x for x in row) for row in data]
+            data = df.values.tolist()
             
             # Insert in batches
             batch_size = 1000
@@ -570,13 +537,12 @@ def process_and_upload_file(file_path, source_type):
                 batch = data[i:i + batch_size]
                 cursor.executemany(replace_query, batch)
                 conn.commit()
-                log(f"Replaced {min(i + batch_size, total_rows)} of {total_rows} rows")
+                log(f"Inserted {min(i + batch_size, total_rows)} of {total_rows} rows")
             
-            # Obtener conteo de inserciones y actualizaciones
             cursor.execute(f"SELECT COUNT(*) FROM `{source_type}`")
             final_count = cursor.fetchone()[0]
+            log(f"Final table count: {final_count}")
             
-            log("Data replacement completed successfully")
             return True, f"Successfully processed {len(df)} records. Final table count: {final_count}"
         else:
             return True, "No records to process"
