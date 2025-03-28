@@ -528,9 +528,10 @@ def process_and_upload_file(file_path, source_type):
         numeric_columns = df.select_dtypes(include=['float64', 'int64']).columns
         for col in numeric_columns:
             log(f"Cleaning numeric values in {col}")
+            # First convert nan to None
             df[col] = df[col].replace({np.nan: None})
-            # Convert to float first to handle any remaining numeric values
-            df[col] = df[col].apply(lambda x: float(x) if x is not None else None)
+            # Then handle any remaining numeric values
+            df[col] = df[col].apply(lambda x: float(x) if pd.notnull(x) else None)
 
         # Handle string/object columns
         object_columns = df.select_dtypes(include=['object']).columns
@@ -538,14 +539,23 @@ def process_and_upload_file(file_path, source_type):
             log(f"Cleaning string values in {col}")
             df[col] = df[col].replace({np.nan: None, 'nan': None, 'None': None, '': None})
 
+        # Final nan cleanup before insertion
+        for col in df.columns:
+            df[col] = df[col].replace({np.nan: None, float('nan'): None})
+            # Convert any remaining nan strings
+            df[col] = df[col].apply(lambda x: None if isinstance(x, float) and np.isnan(x) else x)
+
         # Insert all data
         if len(df) > 0:
             columns = ', '.join(f'`{col}`' for col in df.columns)
             placeholders = ', '.join(['%s'] * len(df.columns))
             replace_query = f"REPLACE INTO `{source_type}` ({columns}) VALUES ({placeholders})"
             
-            # Convert DataFrame to list of tuples
-            data = df.values.tolist()
+            # Convert DataFrame to list of tuples and ensure no nan values
+            data = []
+            for row in df.values:
+                cleaned_row = [None if isinstance(x, float) and np.isnan(x) else x for x in row]
+                data.append(cleaned_row)
             
             # Insert in batches
             batch_size = 1000
