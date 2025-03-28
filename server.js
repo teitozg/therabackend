@@ -31,13 +31,16 @@ const validateApiKey = (req, res, next) => {
   next();
 };
 
-// Add the valid source types constant
-const VALID_SOURCE_TYPES = [
-  "Stripe_Balance_Changes",
-  "Stripe_Incoming_Transactions",
-  "Ledger_Accounts",
-  "Thera_Ledger_Transactions",
-];
+// Add this near the top with other constants
+const sourceMap = {
+  Stripe_Incoming_Transactions: "Thera_Stripe_Incoming_Transactions",
+  Stripe_Balance_Changes: "Thera_Stripe_Balance_Changes",
+  Ledger_Transactions: "Thera_Ledger_Transactions",
+  Ledger_Accounts: "Thera_Ledger_Accounts",
+};
+
+// Add this near the top with other constants
+const VALID_SOURCE_TYPES = Object.keys(sourceMap);
 
 // Database configuration
 const dbConfig = {
@@ -152,10 +155,12 @@ app.post("/api/upload-json", validateApiKey, async (req, res) => {
       });
     }
 
-    if (!VALID_SOURCE_TYPES.includes(source)) {
+    // Map the source to its internal name
+    const mappedSource = sourceMap[source];
+    if (!mappedSource) {
       return res.status(400).json({
-        error: "Invalid payload",
-        message: `source must be one of: ${VALID_SOURCE_TYPES.join(", ")}`,
+        error: "Invalid source type",
+        message: `source must be one of: ${Object.keys(sourceMap).join(", ")}`,
       });
     }
 
@@ -178,7 +183,7 @@ app.post("/api/upload-json", validateApiKey, async (req, res) => {
     const tempFilePath = path.join(
       __dirname,
       "uploads",
-      `${timestamp}-${source}.csv`
+      `${timestamp}-${mappedSource}.csv`
     );
 
     log(`Creating temporary CSV file: ${tempFilePath}`);
@@ -186,13 +191,12 @@ app.post("/api/upload-json", validateApiKey, async (req, res) => {
     log(`Wrote ${data.length} records to temporary CSV file`);
 
     // Process the file using Python script
-    const sourceType = source.replace(/ /g, "_");
     const pythonScriptPath = path.join(__dirname, "data_processor.py");
 
     log("Running Python script:", {
       script: pythonScriptPath,
       file: tempFilePath,
-      source: sourceType,
+      source: mappedSource,
     });
 
     const pythonProcess = spawn("python", [
@@ -200,7 +204,7 @@ app.post("/api/upload-json", validateApiKey, async (req, res) => {
       "--file",
       tempFilePath,
       "--source",
-      sourceType,
+      mappedSource,
     ]);
 
     let result = "";
