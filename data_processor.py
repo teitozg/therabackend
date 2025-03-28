@@ -520,14 +520,27 @@ def process_and_upload_file(file_path, source_type):
             elif pd.api.types.is_numeric_dtype(df[col]):
                 df[col] = df[col].replace({pd.NA: None, np.nan: None})
             elif pd.api.types.is_object_dtype(df[col]):
+                if col in ['effective_date', 'posted_at', 'effective_at']:
+                    # Remove UTC suffix from datetime strings
+                    df[col] = df[col].apply(lambda x: x.replace(' UTC', '') if isinstance(x, str) else x)
                 df[col] = df[col].replace({pd.NA: None, np.nan: None, 'nan': None, 'None': None, '': None})
-        
+
+        # Special handling for Ledger Transactions datetime fields
+        if source_type == "Thera_Ledger_Transactions":
+            datetime_columns = ['effective_date', 'posted_at', 'effective_at']
+            for col in datetime_columns:
+                if col in df.columns:
+                    log(f"Cleaning datetime values in {col}")
+                    df[col] = pd.to_datetime(df[col].str.replace(' UTC', ''), errors='coerce')
+                    df[col] = df[col].dt.strftime('%Y-%m-%d %H:%M:%S')
+
         # Insert all data
         if len(df) > 0:
             columns = ', '.join(f'`{col}`' for col in df.columns)
             placeholders = ', '.join(['%s'] * len(df.columns))
             replace_query = f"REPLACE INTO `{source_type}` ({columns}) VALUES ({placeholders})"
             
+            # Convert DataFrame to list of tuples
             data = df.values.tolist()
             
             # Insert in batches
@@ -535,10 +548,15 @@ def process_and_upload_file(file_path, source_type):
             total_rows = len(data)
             for i in range(0, total_rows, batch_size):
                 batch = data[i:i + batch_size]
-                cursor.executemany(replace_query, batch)
-                conn.commit()
-                log(f"Inserted {min(i + batch_size, total_rows)} of {total_rows} rows")
-            
+                try:
+                    cursor.executemany(replace_query, batch)
+                    conn.commit()
+                    log(f"Inserted {min(i + batch_size, total_rows)} of {total_rows} rows")
+                except Exception as e:
+                    log(f"Error in batch starting at row {i}: {str(e)}")
+                    log(f"First row in failed batch: {batch[0]}")
+                    raise
+
             cursor.execute(f"SELECT COUNT(*) FROM `{source_type}`")
             final_count = cursor.fetchone()[0]
             log(f"Final table count: {final_count}")
