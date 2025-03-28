@@ -798,63 +798,83 @@ def perform_reconciliation():
                 merge_source = 'stripe_only'
                 succeeded_matches['stripe_only'] += 1
             
-            succeeded_data.append((
-                matching_ledger['id'] if matching_ledger else None,
-                matching_ledger['description'] if matching_ledger else None,
-                matching_ledger['status'] if matching_ledger else None,
-                matching_ledger['ledger_id'] if matching_ledger else None,
-                matching_ledger['effective_date'] if matching_ledger else None,
-                matching_ledger['posted_at'] if matching_ledger else None,
-                matching_ledger['metadata'] if matching_ledger else None,
-                float(matching_ledger['amount_USD']) if matching_ledger and matching_ledger['amount_USD'] else None,
-                matching_ledger['currency_USD'] if matching_ledger else None,
-                matching_ledger['metadata_paymentId'] if matching_ledger else None,
-                matching_ledger['metadata_type'] if matching_ledger else None,
-                stripe_tx['id'],
-                stripe_tx['created_date_utc'],
-                float(stripe_tx['amount']),
-                stripe_tx['currency'],
-                stripe_tx['PaymentIntent_ID'],
-                stripe_tx['status'],
-                merge_source
-            ))
-        
-        # Add ledger_only records for succeeded matches
+            # Add debug logging
+            log(f"Processing succeeded match - Stripe ID: {stripe_tx['id']}, Match found: {matching_ledger is not None}")
+            
+            succeeded_data.append({
+                'id_ledger': matching_ledger['id'] if matching_ledger else None,
+                'description_ledger': matching_ledger['description'] if matching_ledger else None,
+                'status_ledger': matching_ledger['status'] if matching_ledger else None,
+                'ledger_id': matching_ledger['ledger_id'] if matching_ledger else None,
+                'effective_date': matching_ledger['effective_date'] if matching_ledger else None,
+                'posted_at': matching_ledger['posted_at'] if matching_ledger else None,
+                'metadata': matching_ledger['metadata'] if matching_ledger else None,
+                'amount_USD': float(matching_ledger['amount_USD']) if matching_ledger and matching_ledger['amount_USD'] else 0,
+                'currency_USD': matching_ledger['currency_USD'] if matching_ledger else None,
+                'metadata_paymentId': matching_ledger['metadata_paymentId'] if matching_ledger else None,
+                'metadata_type': matching_ledger['metadata_type'] if matching_ledger else None,
+                'id_stripe': stripe_tx['id'],
+                'created_date_utc': stripe_tx['created_date_utc'],
+                'amount': float(stripe_tx['amount']) if stripe_tx['amount'] else 0,
+                'currency': stripe_tx['currency'],
+                'paymentintent_id': stripe_tx['PaymentIntent_ID'],
+                'status_stripe': stripe_tx['status'],
+                'merge_source': merge_source
+            })
+
+        # Add ledger_only records
         for ledger_tx in ledger_succeeded:
-            if not any(sd[0] == ledger_tx['id'] for sd in succeeded_data):
+            if not any(sd['id_ledger'] == ledger_tx['id'] for sd in succeeded_data):
                 succeeded_matches['ledger_only'] += 1
-                succeeded_data.append((
-                    ledger_tx['id'],
-                    ledger_tx['description'],
-                    ledger_tx['status'],
-                    ledger_tx['ledger_id'],
-                    ledger_tx['effective_date'],
-                    ledger_tx['posted_at'],
-                    ledger_tx['metadata'],
-                    float(ledger_tx['amount_USD']) if ledger_tx['amount_USD'] else None,
-                    ledger_tx['currency_USD'],
-                    ledger_tx['metadata_paymentId'] if ledger_tx['metadata_paymentId'] else None,
-                    ledger_tx['metadata_type'] if ledger_tx['metadata_type'] else None,
-                    None, None, None, None, None, None, None, None, None, None, None,
-                    'ledger_only'
-                ))
-        
+                succeeded_data.append({
+                    'id_ledger': ledger_tx['id'],
+                    'description_ledger': ledger_tx['description'],
+                    'status_ledger': ledger_tx['status'],
+                    'ledger_id': ledger_tx['ledger_id'],
+                    'effective_date': ledger_tx['effective_date'],
+                    'posted_at': ledger_tx['posted_at'],
+                    'metadata': ledger_tx['metadata'],
+                    'amount_USD': float(ledger_tx['amount_USD']) if ledger_tx['amount_USD'] else 0,
+                    'currency_USD': ledger_tx['currency_USD'],
+                    'metadata_paymentId': ledger_tx['metadata_paymentId'],
+                    'metadata_type': ledger_tx['metadata_type'],
+                    'id_stripe': None,
+                    'created_date_utc': None,
+                    'amount': None,
+                    'currency': None,
+                    'paymentintent_id': None,
+                    'status_stripe': None,
+                    'merge_source': 'ledger_only'
+                })
+
         # Insert succeeded matches
         log("Saving succeeded matches...")
-        succeeded_columns = """
-            id_ledger, description_ledger, status_ledger, ledger_id,
-            effective_date, posted_at, metadata,
-            amount_USD, currency_USD, metadata_paymentId,
-            metadata_type, id_stripe, created_date_utc,
-            amount, currency, paymentintent_id,
-            status_stripe, merge_source
-        """
-        placeholders = ', '.join(['%s'] * 18)  # Changed from 16 to 18 to match the number of columns
-        cursor.executemany(f"""
-            INSERT INTO succeeded_matches ({succeeded_columns})
-            VALUES ({placeholders})
-        """, succeeded_data)
-        
+        if succeeded_data:
+            # Get column names from the first record
+            columns = list(succeeded_data[0].keys())
+            placeholders = ', '.join(['%s'] * len(columns))
+            columns_str = ', '.join(f'`{col}`' for col in columns)
+            
+            insert_query = f"""
+                INSERT INTO succeeded_matches ({columns_str})
+                VALUES ({placeholders})
+            """
+            
+            # Convert dictionaries to tuples in the same order as columns
+            values = [[record[col] for col in columns] for record in succeeded_data]
+            
+            # Insert in batches
+            batch_size = 1000
+            for i in range(0, len(values), batch_size):
+                batch = values[i:i + batch_size]
+                try:
+                    cursor.executemany(insert_query, batch)
+                    conn.commit()
+                    log(f"Inserted batch of {len(batch)} succeeded matches")
+                except Exception as e:
+                    log(f"Error inserting batch: {str(e)}")
+                    raise
+
         conn.commit()
         log("Reconciliation completed successfully")
         
