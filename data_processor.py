@@ -230,10 +230,6 @@ def create_table_if_not_exists(cursor, table_name, df=None):
         return
 
     if table_name == "Thera_Stripe_Incoming_Transactions":
-        # Primero eliminar la tabla si existe
-        cursor.execute("DROP TABLE IF EXISTS Thera_Stripe_Incoming_Transactions")
-        
-        # Crear la tabla con todas las columnas del CSV
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS Thera_Stripe_Incoming_Transactions (
                 id VARCHAR(255) PRIMARY KEY,
