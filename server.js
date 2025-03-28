@@ -7,6 +7,7 @@ const path = require("path");
 const { spawn } = require("child_process");
 const mysql = require("mysql2/promise");
 const { Parser } = require("json2csv");
+const fs = require("fs");
 
 const app = express();
 
@@ -30,6 +31,14 @@ const validateApiKey = (req, res, next) => {
   next();
 };
 
+// Add the valid source types constant
+const VALID_SOURCE_TYPES = [
+  "Stripe_Balance_Changes",
+  "Stripe_Incoming_Transactions",
+  "Ledger_Accounts",
+  "Thera_Ledger_Transactions",
+];
+
 // Database configuration
 const dbConfig = {
   host: process.env.DB_HOST || "35.185.8.133", // Direct connection to Cloud SQL
@@ -51,7 +60,7 @@ app.use(
     credentials: true,
   })
 );
-app.use(express.json());
+app.use(express.json({ limit: "10mb" }));
 
 // Configure multer for file upload
 const storage = multer.diskStorage({
@@ -127,6 +136,120 @@ app.post("/api/upload", validateApiKey, upload.single("file"), (req, res) => {
     res
       .status(500)
       .json({ message: "Error processing file", error: error.message });
+  }
+});
+
+// Add the new endpoint after existing /api/upload endpoint
+app.post("/api/upload-json", validateApiKey, async (req, res) => {
+  try {
+    // Validate request body
+    const { source, data } = req.body;
+
+    if (!source) {
+      return res.status(400).json({
+        error: "Invalid payload",
+        message: "source is required",
+      });
+    }
+
+    if (!VALID_SOURCE_TYPES.includes(source)) {
+      return res.status(400).json({
+        error: "Invalid payload",
+        message: `source must be one of: ${VALID_SOURCE_TYPES.join(", ")}`,
+      });
+    }
+
+    if (!Array.isArray(data) || data.length === 0) {
+      return res.status(400).json({
+        error: "Invalid payload",
+        message: "data must be a non-empty array",
+      });
+    }
+
+    // Create temporary file
+    const timestamp = Date.now();
+    const tempFilePath = path.join(
+      __dirname,
+      "uploads",
+      `${timestamp}-${source}.json`
+    );
+
+    log(`Creating temporary file: ${tempFilePath}`);
+    fs.writeFileSync(tempFilePath, JSON.stringify(data, null, 2));
+    log(`Wrote ${data.length} records to temporary file`);
+
+    // Process the file using Python script
+    const sourceType = source.replace(/ /g, "_");
+    const pythonScriptPath = path.join(__dirname, "data_processor.py");
+
+    log("Running Python script:", {
+      script: pythonScriptPath,
+      file: tempFilePath,
+      source: sourceType,
+    });
+
+    const pythonProcess = spawn("python", [
+      pythonScriptPath,
+      "--file",
+      tempFilePath,
+      "--source",
+      sourceType,
+    ]);
+
+    let result = "";
+    let error = "";
+
+    pythonProcess.stdout.on("data", (data) => {
+      result += data.toString();
+      log("Python stdout:", data.toString());
+    });
+
+    pythonProcess.stderr.on("data", (data) => {
+      error += data.toString();
+      log("Python stderr:", data.toString());
+    });
+
+    pythonProcess.on("close", (code) => {
+      // Clean up temporary file
+      try {
+        fs.unlinkSync(tempFilePath);
+        log(`Cleaned up temporary file: ${tempFilePath}`);
+      } catch (cleanupError) {
+        log(
+          `Warning: Failed to clean up temporary file: ${cleanupError.message}`
+        );
+      }
+
+      if (code !== 0) {
+        log(`Python process failed with code ${code}`);
+        return res.status(500).json({
+          error: "Processing failed",
+          message: error || "Unknown error occurred",
+        });
+      }
+
+      // Extract record count from result if available
+      let recordCount = "unknown number of";
+      try {
+        const resultObj = JSON.parse(result);
+        if (resultObj.count) {
+          recordCount = resultObj.count;
+        }
+      } catch (e) {
+        log("Warning: Could not parse record count from result");
+      }
+
+      res.json({
+        message: "JSON file processed successfully",
+        result: `Processed ${recordCount} records`,
+      });
+    });
+  } catch (error) {
+    log("Error processing JSON upload:", error);
+    res.status(500).json({
+      error: "Server error",
+      message: error.message,
+    });
   }
 });
 
