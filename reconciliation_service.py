@@ -547,17 +547,17 @@ def perform_reconciliation():
         cursor.execute("""
             SELECT 
                 id,
-                amount,
-                amount_refunded,
+                COALESCE(amount, 0) as amount,  # Handle NULL amounts
+                COALESCE(amount_refunded, 0) as amount_refunded,
                 currency,
-                captured,
-                converted_amount,
-                converted_amount_refunded,
+                COALESCE(captured, 0) as captured,
+                COALESCE(converted_amount, 0) as converted_amount,
+                COALESCE(converted_amount_refunded, 0) as converted_amount_refunded,
                 converted_currency,
                 decline_reason,
                 description,
-                fee,
-                is_link,
+                COALESCE(fee, 0) as fee,
+                COALESCE(is_link, 0) as is_link,
                 link_funding,
                 mode,
                 paymentintent_id as PaymentIntent_ID,
@@ -567,7 +567,7 @@ def perform_reconciliation():
                 statement_descriptor,
                 status,
                 seller_message,
-                taxes_on_fee,
+                COALESCE(taxes_on_fee, 0) as taxes_on_fee,
                 card_id,
                 card_name,
                 card_brand,
@@ -583,11 +583,32 @@ def perform_reconciliation():
         # Get Started Ledger transactions
         log("Fetching Started Ledger transactions...")
         cursor.execute("""
-            SELECT *
+            SELECT 
+                id,
+                description,
+                status,
+                ledger_id,
+                effective_date,
+                posted_at,
+                metadata,
+                COALESCE(amount_USD, 0) as amount_USD,
+                currency_USD,
+                COALESCE(amount_EUR, 0) as amount_EUR,
+                currency_EUR,
+                COALESCE(amount_GBP, 0) as amount_GBP,
+                currency_GBP,
+                metadata_latestStripeChargeId,
+                metadata_payInType,
+                metadata_paymentId,
+                metadata_paymentMethodId,
+                metadata_stripeBalanceTrxId,
+                COALESCE(metadata_stripeExchangeRate, 0) as metadata_stripeExchangeRate,
+                metadata_type,
+                effective_at
             FROM Thera_Ledger_Transactions
-            WHERE metadata_type = 'PAY_IN_STARTED'  # Keep this filter
-            OR metadata_latestStripeChargeId IS NOT NULL  # But make it OR instead of AND
-            OR metadata_paymentId IS NOT NULL  # Include any with payment IDs
+            WHERE metadata_type = 'PAY_IN_STARTED'
+            OR metadata_latestStripeChargeId IS NOT NULL
+            OR metadata_paymentId IS NOT NULL
         """)
         ledger_started = cursor.fetchall()
         log(f"Found {len(ledger_started)} Started Ledger transactions")
