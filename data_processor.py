@@ -514,25 +514,29 @@ def process_and_upload_file(file_path, source_type):
         
         # Prepare data for insertion - handle all rows
         log("Preparing all rows for insertion...")
-        for col in df.columns:
-            if pd.api.types.is_datetime64_any_dtype(df[col]):
+        
+        # First handle datetime columns
+        datetime_columns = ['effective_date', 'posted_at', 'effective_at']
+        for col in datetime_columns:
+            if col in df.columns:
+                log(f"Cleaning datetime values in {col}")
+                df[col] = df[col].apply(lambda x: x.replace(' UTC', '') if isinstance(x, str) else x)
+                df[col] = pd.to_datetime(df[col], errors='coerce')
                 df[col] = df[col].dt.strftime('%Y-%m-%d %H:%M:%S')
-            elif pd.api.types.is_numeric_dtype(df[col]):
-                df[col] = df[col].replace({pd.NA: None, np.nan: None})
-            elif pd.api.types.is_object_dtype(df[col]):
-                if col in ['effective_date', 'posted_at', 'effective_at']:
-                    # Remove UTC suffix from datetime strings
-                    df[col] = df[col].apply(lambda x: x.replace(' UTC', '') if isinstance(x, str) else x)
-                df[col] = df[col].replace({pd.NA: None, np.nan: None, 'nan': None, 'None': None, '': None})
 
-        # Special handling for Ledger Transactions datetime fields
-        if source_type == "Thera_Ledger_Transactions":
-            datetime_columns = ['effective_date', 'posted_at', 'effective_at']
-            for col in datetime_columns:
-                if col in df.columns:
-                    log(f"Cleaning datetime values in {col}")
-                    df[col] = pd.to_datetime(df[col].str.replace(' UTC', ''), errors='coerce')
-                    df[col] = df[col].dt.strftime('%Y-%m-%d %H:%M:%S')
+        # Handle numeric columns - replace nan with None
+        numeric_columns = df.select_dtypes(include=['float64', 'int64']).columns
+        for col in numeric_columns:
+            log(f"Cleaning numeric values in {col}")
+            df[col] = df[col].replace({np.nan: None})
+            # Convert to float first to handle any remaining numeric values
+            df[col] = df[col].apply(lambda x: float(x) if x is not None else None)
+
+        # Handle string/object columns
+        object_columns = df.select_dtypes(include=['object']).columns
+        for col in object_columns:
+            log(f"Cleaning string values in {col}")
+            df[col] = df[col].replace({np.nan: None, 'nan': None, 'None': None, '': None})
 
         # Insert all data
         if len(df) > 0:
@@ -549,6 +553,12 @@ def process_and_upload_file(file_path, source_type):
             for i in range(0, total_rows, batch_size):
                 batch = data[i:i + batch_size]
                 try:
+                    # Log first row of first batch for debugging
+                    if i == 0:
+                        log(f"Sample row data types:")
+                        for val, col in zip(batch[0], df.columns):
+                            log(f"{col}: {type(val)} = {val}")
+                    
                     cursor.executemany(replace_query, batch)
                     conn.commit()
                     log(f"Inserted {min(i + batch_size, total_rows)} of {total_rows} rows")
