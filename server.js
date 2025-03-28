@@ -139,7 +139,7 @@ app.post("/api/upload", validateApiKey, upload.single("file"), (req, res) => {
   }
 });
 
-// Add the new endpoint after existing /api/upload endpoint
+// Update the /api/upload-json endpoint
 app.post("/api/upload-json", validateApiKey, async (req, res) => {
   try {
     // Validate request body
@@ -166,17 +166,24 @@ app.post("/api/upload-json", validateApiKey, async (req, res) => {
       });
     }
 
-    // Create temporary file
+    // Convert JSON array to CSV string
+    const parser = new Parser({
+      // Get fields from the first object's keys
+      fields: Object.keys(data[0]),
+    });
+    const csvData = parser.parse(data);
+
+    // Create temporary CSV file
     const timestamp = Date.now();
     const tempFilePath = path.join(
       __dirname,
       "uploads",
-      `${timestamp}-${source}.json`
+      `${timestamp}-${source}.csv`
     );
 
-    log(`Creating temporary file: ${tempFilePath}`);
-    fs.writeFileSync(tempFilePath, JSON.stringify(data, null, 2));
-    log(`Wrote ${data.length} records to temporary file`);
+    log(`Creating temporary CSV file: ${tempFilePath}`);
+    fs.writeFileSync(tempFilePath, csvData);
+    log(`Wrote ${data.length} records to temporary CSV file`);
 
     // Process the file using Python script
     const sourceType = source.replace(/ /g, "_");
@@ -213,7 +220,7 @@ app.post("/api/upload-json", validateApiKey, async (req, res) => {
       // Clean up temporary file
       try {
         fs.unlinkSync(tempFilePath);
-        log(`Cleaned up temporary file: ${tempFilePath}`);
+        log(`Cleaned up temporary CSV file: ${tempFilePath}`);
       } catch (cleanupError) {
         log(
           `Warning: Failed to clean up temporary file: ${cleanupError.message}`
@@ -240,7 +247,7 @@ app.post("/api/upload-json", validateApiKey, async (req, res) => {
       }
 
       res.json({
-        message: "JSON file processed successfully",
+        message: "JSON data processed successfully",
         result: `Processed ${recordCount} records`,
       });
     });
