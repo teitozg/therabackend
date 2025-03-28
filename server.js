@@ -173,12 +173,11 @@ app.post("/api/upload-json", validateApiKey, async (req, res) => {
 
     // Convert JSON array to CSV string
     const parser = new Parser({
-      // Get fields from the first object's keys
       fields: Object.keys(data[0]),
     });
     const csvData = parser.parse(data);
 
-    // Create temporary CSV file
+    // Create temporary CSV file with a unique name
     const timestamp = Date.now();
     const tempFilePath = path.join(
       __dirname,
@@ -190,7 +189,7 @@ app.post("/api/upload-json", validateApiKey, async (req, res) => {
     fs.writeFileSync(tempFilePath, csvData);
     log(`Wrote ${data.length} records to temporary CSV file`);
 
-    // Process the file using Python script
+    // Process the file using Python script with the same logic as CSV upload
     const pythonScriptPath = path.join(__dirname, "data_processor.py");
 
     log("Running Python script:", {
@@ -220,7 +219,7 @@ app.post("/api/upload-json", validateApiKey, async (req, res) => {
       log("Python stderr:", data.toString());
     });
 
-    pythonProcess.on("close", (code) => {
+    pythonProcess.on("close", async (code) => {
       // Clean up temporary file
       try {
         fs.unlinkSync(tempFilePath);
