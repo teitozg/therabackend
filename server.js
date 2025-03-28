@@ -15,6 +15,21 @@ const log = (message) => {
   console.log(`[${new Date().toISOString()}] ${message}`);
 };
 
+// Add this middleware function near the top of the file, after the requires
+const validateApiKey = (req, res, next) => {
+  const apiKey = req.headers["x-api-key"];
+
+  if (!apiKey || apiKey !== process.env.CLIENT_API_KEY) {
+    console.error("Invalid or missing API key");
+    return res.status(403).json({
+      error: "Forbidden",
+      message: "Invalid or missing API key",
+    });
+  }
+
+  next();
+};
+
 // Database configuration
 const dbConfig = {
   host: process.env.DB_HOST || "35.185.8.133", // Direct connection to Cloud SQL
@@ -56,8 +71,8 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage: storage });
 
-// File upload endpoint
-app.post("/api/upload", upload.single("file"), (req, res) => {
+// Modify the upload endpoint to use the API key validation
+app.post("/api/upload", validateApiKey, upload.single("file"), (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ message: "No file uploaded" });

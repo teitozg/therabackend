@@ -15,3 +15,5 @@ services:
         value: thera_final_database
       - key: DB_PORT
         value: 3306
+      - key: CLIENT_API_KEY
+        value: 9f8a24bcfb9d4c8e97f6c4c7e2ac9ed7d64fbd3d2ad1f1ef68e8a58273f5b649
